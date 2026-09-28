@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Attendance Advisor</title>
+<link href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&family=IBM+Plex+Sans:wght@400;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root{--bg:#14213d;--panel:#1d2d50;--line:#3a4d7a;--txt:#f1f5e9;--mute:#a9b6d3;--ok:#b8f35a;--warn:#ffb627;--bad:#ff5c5c;--ink:#14213d}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);font:16px/1.55 "IBM Plex Sans",system-ui,sans-serif;padding:24px 16px 100px}
+main{max-width:1000px;margin:auto}
+h1,h2,.px{font-family:Silkscreen,"Courier New",monospace;font-weight:700;letter-spacing:.5px}
+h1{font-size:clamp(26px,5vw,44px);margin:0 0 4px;line-height:1.1}
+h2{font-size:18px;margin:0 0 14px}
+p.sub{color:var(--mute);margin:0 0 24px}
+.panel{background:var(--panel);border:3px solid var(--line);box-shadow:5px 5px 0 #0c1428;padding:18px;margin-bottom:22px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:22px}
+.stat{background:var(--panel);border:3px solid var(--line);padding:14px}
+.stat b{display:block;font:700 34px Silkscreen,monospace}
+.stat span{color:var(--mute);font-size:14px}
+.charts{display:grid;grid-template-columns:1fr 2fr;gap:22px}
+@media(max-width:760px){.charts{grid-template-columns:1fr}}
+.cbox{position:relative;height:260px}
+table{width:100%;border-collapse:collapse;min-width:640px}
+.scroll{overflow-x:auto}
+th{font:400 12px Silkscreen,monospace;color:var(--mute);text-align:left;padding:6px}
+td{padding:6px;border-top:1px solid var(--line);vertical-align:middle}
+input{background:var(--bg);color:var(--txt);border:2px solid var(--line);padding:6px;width:74px;font:inherit}
+input.name{width:130px}
+input:focus,button:focus-visible{outline:3px solid var(--ok);outline-offset:1px}
+.bar{height:12px;background:var(--bg);border:2px solid var(--line);min-width:90px}
+.bar i{display:block;height:100%}
+.tag{font:700 12px Silkscreen,monospace;padding:2px 6px;color:var(--ink)}
+button{font:700 13px Silkscreen,monospace;background:var(--ok);color:var(--ink);border:3px solid var(--ink);box-shadow:3px 3px 0 #0c1428;padding:8px 12px;cursor:pointer}
+button.ghost{background:transparent;color:var(--txt);border-color:var(--line)}
+button:active{transform:translate(2px,2px);box-shadow:1px 1px 0 #0c1428}
+.row{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-top:12px}
+.hint{color:var(--mute);font-size:14px}
+#fab{position:fixed;right:18px;bottom:18px;z-index:10;font-size:15px;padding:14px 16px}
+#chat{position:fixed;right:18px;bottom:78px;width:min(380px,calc(100vw - 36px));height:min(520px,70vh);display:none;flex-direction:column;background:var(--panel);border:3px solid var(--ok);box-shadow:6px 6px 0 #0c1428;z-index:10}
+#chat.open{display:flex}
+#chat header{padding:10px 14px;border-bottom:3px solid var(--line)}
+#log{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:10px}
+.m{padding:8px 11px;max-width:92%;font-size:14.5px;border:2px solid var(--line)}
+.m.u{align-self:flex-end;background:var(--bg)}
+.m.b{align-self:flex-start;border-color:var(--ok)}
+.chips{display:flex;gap:6px;flex-wrap:wrap;padding:0 12px 8px}
+.chips button{font-size:10px;padding:5px 7px;box-shadow:none;background:transparent;color:var(--txt);border-color:var(--line)}
+#chat form{display:flex;gap:8px;padding:10px;border-top:3px solid var(--line)}
+#chat input{flex:1;width:auto}
+</style>
+</head>
+<body>
+<main>
+  <h1>Attendance Advisor</h1>
+  <p class="sub">Track every subject, test what an OD or medical leave does to your percentage, and ask the assistant before you take a day off.</p>
+
+  <section class="stats" aria-label="Summary">
+    <div class="stat"><b id="sOverall">0%</b><span>Overall attendance</span></div>
+    <div class="stat"><b id="sRisk">0</b><span>Subjects below target</span></div>
+    <div class="stat"><b id="sSafe">0</b><span>Classes you can still miss (total)</span></div>
+    <div class="stat"><span>Target %</span><br><input id="target" type="number" min="1" max="100" aria-label="Target percentage"></div>
+  </section>
+
+  <section class="panel charts">
+    <div><h2>Attendance health</h2><div class="cbox"><canvas id="pie"></canvas></div></div>
+    <div><h2>Subjects vs target</h2><div class="cbox"><canvas id="bars"></canvas></div></div>
+  </section>
+
+  <section class="panel">
+    <h2>OD / medical leave simulator</h2>
+    <p class="hint">Enter the classes you missed that were approved as On-Duty (OD) or Medical Leave. They count as present and the percentage updates instantly. "Classes/day" tells the chatbot how many classes a day of leave costs.</p>
+    <div class="scroll"><table>
+      <thead><tr><th>Subject</th><th>Attended</th><th>Total</th><th>Classes/day</th><th>OD/ML classes</th><th>Final %</th><th>Status</th><th></th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table></div>
+    <div class="row"><button id="add">+ Add subject</button><button id="reset" class="ghost">Reset sample data</button></div>
+  </section>
+</main>
+
+<button id="fab" aria-label="Open Attendance Advisor chat">Ask AI</button>
+<aside id="chat" aria-label="Attendance Advisor chatbot">
+  <header class="px">Attendance Advisor</header>
+  <div id="log" aria-live="polite"></div>
+  <div class="chips" id="chips"></div>
+  <form id="form"><input id="q" placeholder="If I take 3 days sick leave..." autocomplete="off" aria-label="Your question"><button>Send</button></form>
+</aside>
+
+<script>
+const KEY = "attendance-advisor-v2";
+const SAMPLE = {target: 75, subjects: [
+  {n:"Maths",a:40,t:48,d:1,od:0},{n:"Physics",a:36,t:46,d:1,od:0},
+  {n:"Chemistry",a:30,t:42,d:1,od:0},{n:"English",a:25,t:30,d:1,od:0},{n:"Computer Science",a:44,t:50,d:2,od:0}]};
+let S = load();
+function load(){try{return JSON.parse(localStorage.getItem(KEY))||structuredClone(SAMPLE)}catch{return structuredClone(SAMPLE)}}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch{}}
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const num = v => Math.max(0, parseFloat(v)||0);
+
+/* ---------- maths (single source of truth for UI and chatbot) ---------- */
+const eff = s => ({a: s.a + Math.min(s.od, Math.max(0, s.t - s.a)), t: s.t});   // OD/ML counts as present
+const pct = (a,t) => t ? a/t*100 : 0;
+const safeMiss = (a,t,T) => Math.max(0, Math.floor(a/(T/100) - t + 1e-9));       // classes you can still miss
+const needAttend = (a,t,T) => { const r=T/100; return r>=1 ? Infinity : Math.max(0, Math.ceil((r*t - a)/(1-r) - 1e-9)); };
+const color = p => p >= S.target+5 ? "var(--ok)" : p >= S.target ? "var(--warn)" : "var(--bad)";
+
+/* ---------- table ---------- */
+function buildRows(){
+  $("rows").innerHTML = S.subjects.map((s,i)=>`<tr>
+    <td><input class="name" data-i="${i}" data-k="n" value="${esc(s.n)}" aria-label="Subject name"></td>
+    <td><input type="number" min="0" data-i="${i}" data-k="a" value="${s.a}" aria-label="Attended"></td>
+    <td><input type="number" min="0" data-i="${i}" data-k="t" value="${s.t}" aria-label="Total"></td>
+    <td><input type="number" min="1" data-i="${i}" data-k="d" value="${s.d}" aria-label="Classes per day"></td>
+    <td><input type="number" min="0" data-i="${i}" data-k="od" value="${s.od}" aria-label="OD or medical leave classes"></td>
+    <td><b id="p${i}"></b><div class="bar"><i id="b${i}"></i></div></td>
+    <td><span class="tag" id="g${i}"></span></td>
+    <td><button class="ghost" data-del="${i}" aria-label="Delete subject">X</button></td></tr>`).join("");
+  refresh();
+}
+$("rows").addEventListener("input",e=>{
+  const {i,k}=e.target.dataset; if(i===undefined) return;
+  S.subjects[i][k] = k==="n" ? e.target.value : num(e.target.value);
+  if(k==="d" && !S.subjects[i].d) S.subjects[i].d=1;
+  refresh();
+});
+$("rows").addEventListener("click",e=>{const d=e.target.dataset.del; if(d!==undefined){S.subjects.splice(d,1);buildRows()}});
+$("add").onclick=()=>{S.subjects.push({n:"New subject",a:0,t:0,d:1,od:0});buildRows()};
+$("reset").onclick=()=>{S=structuredClone(SAMPLE);$("target").value=S.target;buildRows()};
+$("target").oninput=e=>{S.target=Math.min(100,num(e.target.value))||75;refresh()};
+
+/* ---------- stats + charts ---------- */
+let pie, bars;
+function refresh(){
+  let A=0,T=0,risk=0,safe=0;
+  S.subjects.forEach((s,i)=>{
+    const e=eff(s), p=pct(e.a,e.t); A+=e.a; T+=e.t;
+    const low=e.t>0&&p<S.target; if(low) risk++; safe+=safeMiss(e.a,e.t,S.target);
+    if($("p"+i)){ $("p"+i).textContent=p.toFixed(1)+"%"; $("b"+i).style.cssText=`width:${Math.min(p,100)}%;background:${color(p)}`;
+      const g=$("g"+i); g.textContent=e.t===0?"NO DATA":low?"AT RISK":p<S.target+5?"CLOSE":"SAFE"; g.style.background=e.t===0?"var(--mute)":color(p);}
+  });
+  $("sOverall").textContent=pct(A,T).toFixed(1)+"%"; $("sRisk").textContent=risk; $("sSafe").textContent=safe;
+  $("sOverall").style.color=color(pct(A,T));
+  drawCharts(A,T); save();
+}
+function drawCharts(A,T){
+  const labels=S.subjects.map(s=>s.n), data=S.subjects.map(s=>+pct(eff(s).a,eff(s).t).toFixed(1));
+  const cols=data.map(color), tick={color:"#a9b6d3"}, grid={color:"#3a4d7a"};
+  if(!pie){
+    Chart.defaults.font.family="IBM Plex Sans"; Chart.defaults.color="#f1f5e9";
+    pie=new Chart($("pie"),{type:"doughnut",data:{labels:["Present","Absent"],datasets:[{data:[0,0],backgroundColor:["#b8f35a","#ff5c5c"],borderColor:"#1d2d50"}]},options:{maintainAspectRatio:false,cutout:"62%"}});
+    bars=new Chart($("bars"),{data:{labels:[],datasets:[
+      {type:"bar",label:"Attendance %",data:[],backgroundColor:[]},
+      {type:"line",label:"Target",data:[],borderColor:"#ffb627",borderDash:[6,4],pointRadius:0}]},
+      options:{maintainAspectRatio:false,scales:{y:{min:0,max:100,ticks:tick,grid},x:{ticks:tick,grid:{display:false}}}}});
+  }
+  pie.data.datasets[0].data=[A,Math.max(0,T-A)]; pie.update();
+  bars.data.labels=labels; bars.data.datasets[0].data=data; bars.data.datasets[0].backgroundColor=cols;
+  bars.data.datasets[1].data=labels.map(()=>S.target); bars.update();
+}
+
+/* ---------- Attendance Advisor chatbot (runs fully in the browser, no API key) ---------- */
+const NUMW={one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,a:1,an:1};
+function parse(q){
+  const t=q.toLowerCase();
+  let target=S.target; const pm=t.match(/(\d{2,3})\s*(%|percent)/); if(pm) target=+pm[1];
+  const w=Object.keys(NUMW).join("|");
+  const nm=t.match(new RegExp(`(\\d+|${w})\\s*[- ]?\\s*(day|days|class|classes|period|periods|lecture|lectures)`));
+  let n=null,unit="day"; if(nm){n=NUMW[nm[1]]||+nm[1]; unit=/class|period|lecture/.test(nm[2])?"class":"day";}
+  const subs=S.subjects.filter(s=>s.n&&t.includes(s.n.toLowerCase()));
+  return {t,target,n,unit,subs,
+    excused:/\b(od|on.?duty|medical|certificate)\b/.test(t),
+    sick:/sick|ill|fever|unwell|hospital/.test(t),
+    leave:/leave|skip|bunk|miss|absent|off\b|holiday|bunking|take/.test(t),
+    recover:/recover|catch up|need to attend|how many.*attend|reach|improve|get back/.test(t),
+    safe:/how many.*(skip|miss|bunk|leave|can i)|can i (skip|miss|bunk)|safe/.test(t)};
+}
+function answer(q){
+  const p=parse(q), list=p.subs.length?p.subs:S.subjects, out=[];
+  if(!S.subjects.length) return "Add at least one subject in the table first.";
+  if(p.n && (p.leave||p.sick||p.excused) && !p.recover){
+    list.forEach(s=>{
+      const e=eff(s), missed=p.unit==="day"?p.n*s.d:p.n, now=pct(e.a,e.t);
+      const after=p.excused?pct(e.a+missed,e.t+missed):pct(e.a,e.t+missed);
+      let line=`<b>${esc(s.n)}</b>: ${now.toFixed(1)}% now, ${after.toFixed(1)}% after ${p.excused?"an approved OD/ML of":"missing"} ${missed} class${missed>1?"es":""}.`;
+      if(after<p.target){ const need=needAttend(e.a,e.t+missed,p.target);
+        line+=` ⚠️ That drops you below ${p.target}%. You would need to attend the next ${need} class${need>1?"es":""} in a row to get back.`;
+      } else line+=` ✅ You stay above ${p.target}% (buffer after this: ${safeMiss(e.a,e.t+missed,p.target)} more class${safeMiss(e.a,e.t+missed,p.target)===1?"":"es"}).`;
+      out.push(line);
+    });
+    if(p.sick&&!p.excused) out.push("💡 Sick leave with a medical certificate can usually be approved as Medical Leave. Enter those classes in the OD/ML column to see the recovered percentage.");
+    return out.join("<br><br>");
+  }
+  if(p.recover||(p.n&&!p.leave)){
+    list.forEach(s=>{const e=eff(s),now=pct(e.a,e.t),need=needAttend(e.a,e.t,p.target);
+      out.push(now>=p.target?`<b>${esc(s.n)}</b>: ${now.toFixed(1)}%, already above ${p.target}%. ✅`:`<b>${esc(s.n)}</b>: ${now.toFixed(1)}%. Attend the next <b>${need}</b> class${need>1?"es":""} without a miss to reach ${p.target}%.`)});
+    return out.join("<br><br>");
+  }
+  if(p.safe||p.leave){
+    list.forEach(s=>{const e=eff(s),m=safeMiss(e.a,e.t,p.target),now=pct(e.a,e.t);
+      out.push(now<p.target?`<b>${esc(s.n)}</b>: ${now.toFixed(1)}%, already below ${p.target}%. Do not skip; attend ${needAttend(e.a,e.t,p.target)} in a row to recover.`:`<b>${esc(s.n)}</b>: you can miss up to <b>${m}</b> class${m===1?"":"es"} (about ${Math.floor(m/s.d)} day${Math.floor(m/s.d)===1?"":"s"}) and stay at ${p.target}%+.`)});
+    return out.join("<br><br>");
+  }
+  let A=0,T=0; S.subjects.forEach(s=>{const e=eff(s);A+=e.a;T+=e.t});
+  const risky=S.subjects.filter(s=>{const e=eff(s);return e.t&&pct(e.a,e.t)<S.target}).map(s=>esc(s.n));
+  return `Your overall attendance is <b>${pct(A,T).toFixed(1)}%</b>. ${risky.length?"Below target: "+risky.join(", ")+".":"Every subject is above target. 🎉"}<br><br>Try: "If I take a 3-day sick leave, will my Chemistry attendance drop below 75%?"`;
+}
+const log=$("log");
+function say(html,who){const d=document.createElement("div");d.className="m "+who;if(who==="u")d.textContent=html;else d.innerHTML=html;log.appendChild(d);log.scrollTop=log.scrollHeight}
+$("fab").onclick=()=>{$("chat").classList.toggle("open"); if(!log.children.length) say("Hi! I read your dashboard data live. Ask me what a leave will do to your attendance.","b"); $("q").focus()};
+$("form").onsubmit=e=>{e.preventDefault();const q=$("q").value.trim();if(!q)return;say(q,"u");$("q").value="";setTimeout(()=>say(answer(q),"b"),250)};
+["If I take a 3-day sick leave, will my Chemistry drop below 75%?","How many classes can I skip?","How many classes do I need to attend to reach 80%?"].forEach(t=>{
+  const b=document.createElement("button");b.type="button";b.textContent=t.length>34?t.slice(0,31)+"...":t;b.title=t;
+  b.onclick=()=>{$("q").value=t;$("form").requestSubmit()};$("chips").appendChild(b)});
+
+$("target").value=S.target; buildRows();
+</script>
+</body>
+</html>
